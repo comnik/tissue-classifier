@@ -1,34 +1,23 @@
 import csv
 import datetime
-from itertools              import chain
 
-import numpy                as np
-import matplotlib.pyplot    as plt
+import numpy as np
+import matplotlib.pyplot as plt
 
-from   sklearn                   import linear_model, metrics, cross_validation, grid_search, multiclass, \
-                                        neighbors, ensemble, preprocessing
-from   sklearn.preprocessing     import PolynomialFeatures
-from   sklearn.svm               import SVR, SVC
-from   sklearn.feature_selection import RFE
+from sklearn import preprocessing, metrics, cross_validation, grid_search, neighbors, ensemble
 
 
-print "imports loaded"
-
-def scorer(y_true,y_pred):
+def scorer(y_true, y_pred):
     """
     Computes the score as detailed in the assignment.
     """
-    count = 0
-    i = 0
-    while i != y_true.shape[0]:
-        if y_true[i][0] != y_pred[i][0]:
-            count = count + 1
 
-        if y_true[i][1] != y_pred[i][1]:
-            count = count + 1
-        i = i + 1
+    n              = y_true.shape[0]
+    count_errors   = lambda truth, pred: [(truth[0] != pred[0]), (truth[1] != pred[1])].count(True)
+    misclassifieds = [count_errors(truth, pred) for truth, pred in zip(y_true, y_pred)]
+    count          = sum(misclassifieds)
 
-    return np.divide(float(count),float(2*y_true.shape[0]))
+    return np.divide(float(count), float(2*n))
 
 
 def to_feature_vec(row):
@@ -36,13 +25,12 @@ def to_feature_vec(row):
     Returns the feature-vector representation of a piece of input data.
     """
 
-    poly = PolynomialFeatures(degree=2)
+    poly = preprocessing.PolynomialFeatures(degree=2)
     A,B,C,D,E,F,G,H,I = row[0:9]
     K = row[9:13]
     L = row[13:]
     return [A,C,D,E,F,G,I] + K + L + [i for s in poly.fit_transform([float(A),float(I), float(E)]) for i in s] # removed H, B --> 0.16
-    # return [A, E, I, F, G] + K + L 
-   
+    # return [A, E, I, F, G] + K + L
 
 
 def get_features(inpath):
@@ -55,12 +43,12 @@ def get_features(inpath):
 
     return np.atleast_1d(X)
 
+
 def make_rfc(num_estimators):
     """
     Returns a random forest classifier.
     """
     return ensemble.RandomForestClassifier(n_estimators=num_estimators, criterion='entropy', n_jobs=-1)
-
 
 
 def main():
@@ -105,9 +93,9 @@ def main():
     #     print('#estimators:', i, 'Mean: ', np.mean(scores), ' +/- ', np.std(scores))
 
 
-    # scores = cross_validation.cross_val_score(rfc, X, Y, scoring=scorefun, cv = 5)
+    scores = cross_validation.cross_val_score(rfc, X, Y, scoring=scorefun, cv = 5)
     # print('Scores: ', scores)
-    # print('Mean: ', np.mean(scores), ' +/- ', np.std(scores))
+    print('Mean: ', np.mean(scores), ' +/- ', np.std(scores))
 
     # regressor_ridge = linear_model.Ridge()
     # param_grid = {'alpha' : np.linspace(0, 100, 10)} # number of alphas is arbitrary
@@ -122,11 +110,11 @@ def main():
     # print('Scores: ', scores)
     # print('Mean: ', np.mean(scores), ' +/- ', np.std(scores))
 
-    Xval = get_features('project_data/validate.csv')
-    # Ypred = gs.best_estimator_.predict(Xval)
-    Ypred = rfc.predict(Xval)
-    # print(Ypred)
-    np.savetxt('out/validate_y.csv', Ypred, delimiter=",", fmt="%i") # the last parameter converts the floats to ints
+    # Xval = get_features('project_data/validate.csv')
+    # # Ypred = gs.best_estimator_.predict(Xval)
+    # Ypred = rfc.predict(Xval)
+    # # print(Ypred)
+    # np.savetxt('out/validate_y.csv', Ypred, delimiter=",", fmt="%i") # the last parameter converts the floats to ints
 
     # raw_input('Press any key to exit...')
 
