@@ -93,14 +93,39 @@ def random_forest(num_estimators=100):
     )
 
 
+def shared_dataset(data_xy, borrow=True):
+    """
+    Function that loads the dataset into shared variables
+
+    The reason we store our dataset in shared variables is to allow
+    Theano to copy it into the GPU memory (when code is run on GPU).
+    Since copying data into the GPU is slow, copying a minibatch everytime
+    is needed (the default behaviour if the data is not in a shared
+    variable) would lead to a large decrease in performance.
+    """
+
+    data_x, data_y = data_xy
+    shared_x = theano.shared(np.asarray(data_x, dtype=theano.config.floatX), borrow=borrow)
+    shared_y = theano.shared(np.asarray(data_y, dtype=theano.config.floatX), borrow=borrow)
+
+    # When storing data on the GPU it has to be stored as floats
+    # therefore we will store the labels as ``floatX`` as well
+    # (``shared_y`` does exactly that). But during our computations
+    # we need them as ints (we use labels as index, and if they are
+    # floats it doesn't make sense) therefore instead of returning
+    # ``shared_y`` we will have to cast it to int. This little hack
+    # lets ous get around this issue
+    return shared_x, T.cast(shared_y, 'int32')
+
+
 def mlp(training_set, validation_set,
         learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=1000, batch_size=20, n_hidden=250):
     """
     Trains a MLP on the training data.
     """
 
-    Xtrain, Ytrain = map(theano.shared, training_set)
-    Xval, Yval = map(theano.shared, validation_set)
+    Xtrain, Ytrain = shared_dataset(training_set)
+    Xval, Yval = shared_dataset(validation_set)
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = Xtrain.get_value(borrow=True).shape[0] / batch_size
@@ -110,7 +135,7 @@ def mlp(training_set, validation_set,
 
     # introduce symbolic vars
     index = T.lscalar() # index to a [mini]batch
-    x = T.vector('x') # the data come as a vector of integer features
+    x = T.matrix('x') # the data come as a vector of float features
     y = T.ivector('y') # the labels come as a vector of integer labels
 
     rng = np.random.RandomState(1234)
@@ -143,7 +168,7 @@ def mlp(training_set, validation_set,
         }
     )
 
-    # compute the gradient of cost with respect to theta (sotred in params)
+    # compute the gradient of cost with respect to theta (sorted in params)
     # the resulting gradients will be stored in a list gparams
     gparams = [T.grad(cost, param) for param in classifier.params]
 
@@ -158,7 +183,7 @@ def mlp(training_set, validation_set,
         outputs = cost,
         updates = updates,
         givens = {
-            x: Xtrain[index * batch_size:(index + 1) * batch_size, :],
+            x: Xtrain[index * batch_size:(index + 1) * batch_size],
             y: Ytrain[index * batch_size:(index + 1) * batch_size]
         }
     )
