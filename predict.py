@@ -26,9 +26,10 @@ def to_feature_vec(row):
     """
 
     poly = preprocessing.PolynomialFeatures(degree=2)
-    A,B,C,D,E,F,G,H,I = row[0:9]
+    A, B, C, D, E, F, G, H, I = row[0:9]
     K = row[9:13]
     L = row[13:]
+
     return [A,C,D,E,F,G,I] + K + L + [i for s in poly.fit_transform([float(A),float(I), float(E)]) for i in s] # removed H, B --> 0.16
     # return [A, E, I, F, G] + K + L
 
@@ -37,18 +38,12 @@ def get_features(inpath):
     """
     Reads our input data from a csv file.
     """
+
     with open(inpath, 'r') as fin:
         reader = csv.reader(fin, delimiter=',')
         X = [to_feature_vec(row) for row in reader]
 
     return np.atleast_1d(X)
-
-
-def make_rfc(num_estimators):
-    """
-    Returns a random forest classifier.
-    """
-    return ensemble.RandomForestClassifier(n_estimators=num_estimators, criterion='entropy', n_jobs=-1)
 
 
 def main():
@@ -67,48 +62,14 @@ def main():
     # print num_neighbors, "neighbors"
 
     num_estimators = 100
-    rfc = ensemble.RandomForestClassifier(n_estimators=num_estimators, criterion='entropy', min_samples_split=2, n_jobs=-1)
-    rfc.fit(Xtrain, Ytrain)
-    print "Random Forest with", num_estimators, "estimators."
-
-
-
-    # Hplot = Xtrain[:, 0]
-    # Xplot = np.atleast_1d([[x] for x in Hplot])
-    # Xplot = Xtrain[:, 0]
-    # Yplot = kneigh.predict(Xtrain)
-
-
-    # plt.plot(Xplot, Ytrain, 'bo') # input data
-    # plt.plot(Xplot, Yplot, 'ro', linewidth = 3) # prediction
-    # plt.plot(Xtrain[:, 0], Xtrain[:, 7], 'bo')
-    # plt.show()
-
     scorefun = metrics.make_scorer(scorer)
+    print("Random Forest with", num_estimators, "estimators.")
 
-
-    # grid = range(40,125,5)
-    # for i in grid:
-    #     scores = cross_validation.cross_val_score(make_rfc(i), X, Y, scoring=scorefun, cv = 5)
-    #     print('#estimators:', i, 'Mean: ', np.mean(scores), ' +/- ', np.std(scores))
-
-
+    rfc = ensemble.RandomForestClassifier(n_estimators=num_estimators, criterion='entropy', min_samples_split=2, n_jobs=-1)
     scores = cross_validation.cross_val_score(rfc, X, Y, scoring=scorefun, cv = 5)
-    # print('Scores: ', scores)
     print('Mean: ', np.mean(scores), ' +/- ', np.std(scores))
 
-    # regressor_ridge = linear_model.Ridge()
-    # param_grid = {'alpha' : np.linspace(0, 100, 10)} # number of alphas is arbitrary
-    # n_scorefun = metrics.make_scorer(lambda x, y: -least_squares_loss(x,y)) #logscore is always maximizing... but we want the minium
-    # gs = grid_search.GridSearchCV(regressor_ridge, param_grid, scoring = n_scorefun, cv = 5)
-    # gs.fit(Xtrain, Ytrain)
-
-    # # print(gs.best_estimator_)
-    # # print(gs.best_score_)
-
-    # scores = cross_validation.cross_val_score(gs.best_estimator_, X, Y, scoring = scorefun, cv = 5)
-    # print('Scores: ', scores)
-    # print('Mean: ', np.mean(scores), ' +/- ', np.std(scores))
+    # OUTPUT
 
     # Xval = get_features('project_data/validate.csv')
     # # Ypred = gs.best_estimator_.predict(Xval)
