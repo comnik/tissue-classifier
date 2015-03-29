@@ -6,148 +6,186 @@ import theano.tensor as T
 from logistic_sgd import LogisticRegression
 
 
-class HiddenLayer(object):
+def zero_W(n_in, n_out):
     """
-    Typical hidden layer of a MLP: units are fully-connected and have
-    sigmoidal activation function. Weight matrix W is of shape (n_in,n_out)
-    and the bias vector b is of shape (n_out,).
-
-    NOTE : The nonlinearity used here is tanh
-
-    Hidden unit activation is given by: tanh(dot(input,W) + b)
-
-    :type rng: numpy.random.RandomState
-    :param rng: a random number generator used to initialize weights
-
-    :type input: theano.tensor.dmatrix
-    :param input: a symbolic tensor of shape (n_examples, n_in)
-
-    :type n_in: int
-    :param n_in: dimensionality of input
-
-    :type n_out: int
-    :param n_out: number of hidden units
-
-    :type activation: theano.Op or function
-    :param activation: Non linearity to be applied in the hidden
-                       layer
+    Returns a weight-matrix of shape (n_in, n_out) initialized with 0.
     """
 
-    def __init__(self, rng, input, n_in, n_out, W=None, b=None, activation=T.tanh):
-        self.input = input
+    return numpy.zeros(
+        (n_in, n_out),
+        dtype=theano.config.floatX
+    )
 
-        # `W` is initialized with `W_values` which is uniformely sampled
-        # from sqrt(-6./(n_in+n_hidden)) and sqrt(6./(n_in+n_hidden))
-        # for tanh activation function
-        # the output of uniform if converted using asarray to dtype
-        # theano.config.floatX so that the code is runable on GPU
-        # Note : optimal initialization of weights is dependent on the
-        #        activation function used (among other things).
-        #        For example, results presented in [Xavier10] suggest that you
-        #        should use 4 times larger initial weights for sigmoid
-        #        compared to tanh
-        #        We have no info for other function, so we use the same as
-        #        tanh.
-        if W is None:
-            W_values = numpy.asarray(
-                rng.uniform(
-                    low=-numpy.sqrt(6. / (n_in + n_out)),
-                    high=numpy.sqrt(6. / (n_in + n_out)),
-                    size=(n_in, n_out)
-                ),
-                dtype=theano.config.floatX
-            )
-            if activation == theano.tensor.nnet.sigmoid:
-                W_values *= 4
 
-            W = theano.shared(value=W_values, name='W', borrow=True)
+def tanh_W(rng, n_in, n_out):
+    """
+    Returns uniformely sampled values from sqrt(-6./(n_in+n_hidden)) and sqrt(6./(n_in+n_hidden)).
+    This provides suitable initialization of weights for the tanh activation function.
 
-        if b is None:
-            b_values = numpy.zeros((n_out,), dtype=theano.config.floatX)
-            b = theano.shared(value=b_values, name='b', borrow=True)
+    rng :: numpy.random.RandomState
+    rng := A random number generator used to initialize weights
+    """
 
-        self.W = W
-        self.b = b
+    return numpy.asarray(
+        rng.uniform(
+            low = -numpy.sqrt(6. / (n_in + n_out)),
+            high = numpy.sqrt(6. / (n_in + n_out)),
+            size = (n_in, n_out)
+        ),
+        dtype=theano.config.floatX
+    )
 
-        lin_output = T.dot(input, self.W) + self.b
-        self.output = (
-            lin_output if activation is None
-            else activation(lin_output)
+
+def sigmoid_W(rng, n_in, n_out):
+    """
+    Results presented in [Xavier10] suggest that you
+    should use 4 times larger initial weights for sigmoid compared to tanh.
+
+    Parameters are the same as for tanh_W.
+    """
+
+    return tanh_W(rng, n_in, n_out) * 4
+
+
+def zero_bias(n_out):
+    """
+    Returns a default bias of all zeros.
+    """
+
+    return numpy.zeros((n_out,), dtype=theano.config.floatX)
+
+
+def negative_log_likelihood(y_pred, y):
+    """
+    Return the mean of the negative log-likelihood of the prediction under a given target distribution.
+    We use the mean instead of the sum so that the learningrate is less dependent on the batch size
+
+    y :: theano.tensor.TensorType
+    y := A vector that gives for each example the correct label.
+    """
+
+    n = y.shape[0]
+    return -T.mean(T.log(y_pred)[T.arange(n), y])
+
+
+def errors(y_pred, y):
+    """
+    Return a float representing the number of errors in the minibatch
+    over the total number of examples of the minibatch; zero one
+    loss over the size of the minibatch
+
+    y :: theano.tensor.TensorType
+    y := A vector that gives for each example the correct label.
+    """
+
+    # check if y has same dimension of y_pred
+    if y.ndim != y_pred.ndim:
+        raise TypeError(
+            'y should have the same shape as self.y_pred',
+            ('y', y.type, 'y_pred', y_pred.type)
         )
+
+    # check if y is of the correct datatype
+    if y.dtype.startswith('int'):
+        # the T.neq operator returns a vector of 0s and 1s, where 1
+        # represents a mistake in prediction
+        return T.mean(T.neq(y_pred, y))
+
+    else:
+        raise NotImplementedError()
+
+
+def gradient_update(cost, params, learning_rate):
+    # compute the gradients of cost, with respect to each parameter
+    gparams = [T.grad(cost, param) for param in params]
+
+    # issue updates to the parameters of the model in the form of (variable, update expression) pairs
+    return [(param, param - learning_rate * gparam) for param, gparam in zip(params, gparams)]
+
+
+class Layer(object):
+
+    def __init__(self, n_in, n_out, compute_w, compute_b):
+        """
+        Typical hidden layer of a MLP, units are fully-connected.
+        Weight matrix W is of shape (n_in, n_out) and the bias vector b is of shape (n_out,).
+
+        Hidden unit activation is given by: dot(input, W) + b
+
+        n_in :: Int - dimensionality of input
+        n_out :: Int - number of hidden units
+        """
+
+        self.W = theano.shared(value=compute_w(n_in, n_out), name='W', borrow=True)
+        self.b = theano.shared(value=compute_b(n_out), name='b', borrow=True)
+
         # parameters of the model
         self.params = [self.W, self.b]
 
+    def output(self, x):
+        return T.dot(x, self.W) + self.b
 
-class MLP(object):
+
+class Sequential(object):
     """
-    Multi-Layer Perceptron
-
-    A multilayer perceptron is a feedforward artificial neural network model
-    that has one layer or more of hidden units and nonlinear activations.
-    Intermediate layers usually have as activation function tanh or the
-    sigmoid function (defined here by a ``HiddenLayer`` class)  while the
-    top layer is a softamx layer (defined here by a ``LogisticRegression``
-    class).
+    A simple, sequential composition of layers.
     """
 
-    def __init__(self, rng, input, n_in, n_hidden, n_out):
+    def __init__(self):
         """
-        :type rng: numpy.random.RandomState
-        :param rng: a random number generator used to initialize weights
-
-        :type input: theano.tensor.TensorType
-        :param input: symbolic variable that describes the input of the
-        architecture (one minibatch)
-
-        :type n_in: int
-        :param n_in: number of input units, the dimension of the space in
-        which the datapoints lie
-
-        :type n_hidden: int
-        :param n_hidden: number of hidden units
-
-        :type n_out: int
-        :param n_out: number of output units, the dimension of the space in
-        which the labels lie
+        Initializes a sequential model from a sequence of computations and layers.
         """
 
-        # Since we are dealing with a one hidden layer MLP, this will translate
-        # into a HiddenLayer with a tanh activation function connected to the
-        # LogisticRegression layer; the activation function can be replaced by
-        # sigmoid or any other nonlinear function
-        self.hiddenLayer = HiddenLayer(
-            rng = rng,
-            input = input,
-            n_in = n_in,
-            n_out = n_hidden,
-            activation = T.tanh
-        )
+        self.steps = []
+        self.layers = []
 
-        # The logistic regression layer gets as input the hidden units
-        # of the hidden layer
-        self.logRegressionLayer = LogisticRegression(
-            input = self.hiddenLayer.output,
-            n_in = n_hidden,
-            n_out = n_out
-        )
+    def layer(self, l):
+        """
+        Adds a new layer to the model.
+        """
 
-        # L1 norm ; one regularization option is to enforce L1 norm to
-        # be small
-        self.L1 = (abs(self.hiddenLayer.W).sum() + abs(self.logRegressionLayer.W).sum())
+        self.steps.append(l.output)
+        self.layers.append(l)
 
-        # square of L2 norm ; one regularization option is to enforce
-        # square of L2 norm to be small
-        self.L2_sqr = ((self.hiddenLayer.W ** 2).sum() + (self.logRegressionLayer.W ** 2).sum())
+        return self
 
-        # negative log likelihood of the MLP is given by the negative
-        # log likelihood of the output of the model, computed in the
-        # logistic regression layer
-        self.negative_log_likelihood = (self.logRegressionLayer.negative_log_likelihood)
+    def step(self, f):
+        """
+        Adds a new computation step to the model.
+        Most useful for activation functions.
+        """
 
-        # same holds for the function computing the number of errors
-        self.errors = self.logRegressionLayer.errors
+        self.steps.append(f)
 
-        # the parameters of the model are the parameters of the two layer it is
-        # made out of
-        self.params = self.hiddenLayer.params + self.logRegressionLayer.params
+        return self
 
+    def build(self):
+        """
+        Finalizes the model.
+        """
+
+        # Parameters of the model = parameters of the layers it is made out of.
+        self.params = self.layers[0].params
+        self.L1 = abs(self.layers[0].W).sum() # L1 norm for regularization.
+        self.L2_sqr = (self.layers[0].W ** 2).sum() # Square of L2 norm for regularization.
+
+        for layer in self.layers[1:]:
+            self.params += layer.params
+            self.L1 += abs(layer.W).sum()
+            self.L2_sqr += (layer.W ** 2).sum()
+
+        print("Initialized sequential model with %i layers." % len(self.layers))
+        print("Parameters: ", self.params)
+
+        return self
+
+    def output(self, x):
+        """
+        Compute the networks output for inputs x.
+        x :: theano.tensor.var.TensorVariable
+        """
+
+        for step in self.steps:
+            x = step(x)
+
+        return x
