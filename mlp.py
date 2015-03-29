@@ -3,8 +3,6 @@ import numpy
 import theano
 import theano.tensor as T
 
-from logistic_sgd import LogisticRegression
-
 
 def zero_W(n_in, n_out):
     """
@@ -98,9 +96,36 @@ def errors(y_pred, y):
 def gradient_update(cost, params, learning_rate):
     # compute the gradients of cost, with respect to each parameter
     gparams = [T.grad(cost, param) for param in params]
-
     # issue updates to the parameters of the model in the form of (variable, update expression) pairs
     return [(param, param - learning_rate * gparam) for param, gparam in zip(params, gparams)]
+
+
+def gradient_updates_momentum(cost, params, learning_rate, momentum):
+    """
+    Compute updates for gradient descent with momentum.
+
+    momentum :: float
+    Should be at least 0 (standard gradient descent) and less than 1.
+    """
+
+    # Make sure momentum is a sane value
+    assert momentum < 1 and momentum >= 0
+    # List of update steps for each parameter
+    updates = []
+    # Just gradient descent on cost
+    for param in params:
+        # For each parameter, we'll create a param_update shared variable.
+        # This variable will keep track of the parameter's update step across iterations.
+        # We initialize it to 0
+        param_update = theano.shared(param.get_value()*0., broadcastable=param.broadcastable)
+        # Each parameter is updated by taking a step in the direction of the gradient.
+        # However, we also "mix in" the previous step according to the given momentum value.
+        # Note that when updating param_update, we are using its old value and also the new gradient step.
+        updates.append((param, param - learning_rate*param_update))
+        # Note that we don't need to derive backpropagation to compute updates - just use T.grad!
+        updates.append((param_update, momentum*param_update + (1. - momentum)*T.grad(cost, param)))
+
+    return updates
 
 
 class Layer(object):

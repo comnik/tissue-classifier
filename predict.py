@@ -142,9 +142,9 @@ def neural_network(training_set, validation_set, learning_rate=0.01, L1_reg=0.00
     cost = mlp.errors(classifier.output(x), y)
     # (mlp.negative_log_likelihood(classifier.output(x), y) + L1_reg * classifier.L1 + L2_reg * classifier.L2_sqr)
 
-    train = theano.function([x, y], cost, updates=mlp.gradient_update(cost, classifier.params, learning_rate))
+    predict  = theano.function([x], classifier.output(x))
+    train    = theano.function([x, y], cost, updates=mlp.gradient_update(cost, classifier.params, learning_rate))
     validate = theano.function([x, y], mlp.errors(classifier.output(x), y))
-    predict = theano.function([x], classifier.output(x))
 
     print('Training model...')
 
@@ -162,10 +162,13 @@ def neural_network(training_set, validation_set, learning_rate=0.01, L1_reg=0.00
     test_score = 0.
     start_time = time.clock()
 
+    validation_loss = validate(Xval, Yval)
+    print('\t -> Initial validation error %f%%' % (validation_loss * 100.))
+
     for epoch in range(0, n_epochs):
         loss = train(Xtrain, Ytrain)
-        validation_loss = validate(Xval, Yval)
 
+        validation_loss = validate(Xval, Yval)
         print('\t -> Epoch %i, validation error %f%%' % (epoch, validation_loss * 100.))
 
         # if we got the best validation score until now
